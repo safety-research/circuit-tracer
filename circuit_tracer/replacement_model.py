@@ -292,6 +292,10 @@ class ReplacementModel(HookedTransformer):
             if zero_bos:
                 transcoder_acts[0] = 0
             if sparse:
+                # MPS backend does not currently support sparse tensors,
+                # so force a conversion to CPU if mps is in use
+                if transcoder_acts.device.type == "mps":
+                    transcoder_acts = transcoder_acts.cpu()
                 activation_matrix[layer] = transcoder_acts.to_sparse()
             else:
                 activation_matrix[layer] = transcoder_acts

@@ -304,7 +304,16 @@ def select_scaled_decoder_vecs(
     for layer, row in enumerate(activations):
         _, feat_idx = row.coalesce().indices()
         rows.append(transcoders[layer].W_dec[feat_idx])
-    return torch.cat(rows) * activations.values()[:, None]
+    activation_vals = activations.values()[:, None]
+    decoder_rows = torch.cat(rows)
+
+    # We might have moved sparse tensors to CPU (if MPS, avoiding SparseMPS
+    # backend issues), but activation_vals is no longer sparse so it should
+    # "move" to match the device of decoder_rows.
+    # If the device was not MPS, devices already match and this is a no-op.
+    # If the device was MPS, this "move" is in unified memory anyways.
+    activation_vals = activation_vals.to(decoder_rows.device)
+    return decoder_rows * activation_vals
 
 
 @torch.no_grad()
