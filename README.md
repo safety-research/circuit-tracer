@@ -22,6 +22,13 @@ Currently, intervening on models with respect to the transcoder features you dis
 ## Installation
 To install this library, clone it and run the command  `pip install .` in its directory.
 
+To run on a local machine with GPU support:
+1. Copy the example environment file to create your own:
+```bash
+cp .env.example .env
+```
+2. Add your Hugging Face token to the `.env` file. You can get your token from your [Hugging Face account settings](https://huggingface.co/settings/tokens).
+
 ## Demos
 We include some demos showing how to use our library in the `demos` folder. The main demo is [`demos/circuit_tracing_tutorial.ipynb`](https://github.com/safety-research/circuit-tracer/blob/main/demos/circuit_tracing_tutorial.ipynb), which replicates two of the findings from [this paper](https://transformer-circuits.pub/2025/attribution-graphs/biology.html) using Gemma 2 (2B). All demos except for the Llama demo can be run on Colab.
 
