@@ -36,6 +36,7 @@ from transformer_lens.hook_points import HookPoint
 from circuit_tracer.graph import Graph
 from circuit_tracer.replacement_model import ReplacementModel
 from circuit_tracer.utils.disk_offload import offload_modules
+from circuit_tracer.utils.device import get_default_device
 
 
 class AttributionContext:
@@ -320,7 +321,7 @@ def select_encoder_rows(
 
 
 def compute_partial_influences(edge_matrix, logit_p, row_to_node_index, max_iter=128, device=None):
-    device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = device or get_default_device()
 
     normalized_matrix = torch.empty_like(edge_matrix, device=device).copy_(edge_matrix)
     normalized_matrix = normalized_matrix.abs_()
