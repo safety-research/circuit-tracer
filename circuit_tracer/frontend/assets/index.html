@@ -37,7 +37,7 @@
 
 <script>
 window.init = async function(){
-  window.isLocalServing = false;
+  window.isLocalServing = true;
   var {graphs} = await util.getFile('./data/graph-metadata.json', false)
 
   window.visState = window.visState || {
@@ -108,35 +108,8 @@ window.init = async function(){
   // Create debounced render function
   var debouncedRender = util.debounce(render, 300)
   
-  // Add slider with label only if the graph has node_threshold
+  // Slider container will be created dynamically in render function
   var sliderContainer
-  if (currentGraph && typeof currentGraph.node_threshold === 'number') {
-    sliderContainer = controlsContainer.append('div.slider-container')
-      .style('display', 'flex')
-      .style('align-items', 'center')
-      .style('gap', '8px')
-    sliderContainer.append('span').text('Pruning:')
-    
-    var sliderSel = sliderContainer.append('input')
-      .attr('type', 'range')
-      .attr('min', 0)
-      .attr('max', currentGraph.node_threshold)
-      .attr('step', 0.01)
-      .attr('value', visState.pruningThreshold)
-      .on('input', function() {
-        // Update state and UI immediately
-        visState.pruningThreshold = this.value
-        visState.clickedId = util.params.get('clickedId')?.replace('null', '')
-        util.params.set('pruningThreshold', this.value)
-        valueDisplay.text(parseFloat(this.value).toFixed(2))
-        
-        // Debounce the actual render
-        debouncedRender()
-      })
-    
-    var valueDisplay = sliderContainer.append('span.value-display')
-      .text(parseFloat(visState.pruningThreshold).toFixed(2))
-  }
 
   selectSel.appendMany('option', graphs)
     .text(d => {
@@ -222,6 +195,65 @@ window.init = async function(){
     });
 
   function render() {
+    var m = graphs.find(g => g.slug == visState.slug)
+    if (!m) return
+    
+    // Handle slider creation/removal dynamically
+    if (m && typeof m.node_threshold === 'number') {
+      // Create slider if it doesn't exist
+      if (!sliderContainer) {
+        sliderContainer = controlsContainer.append('div.slider-container')
+          .style('display', 'flex')
+          .style('align-items', 'center')
+          .style('gap', '8px')
+        
+        sliderContainer.append('span').text('Pruning:')
+        
+        var sliderSel = sliderContainer.append('input')
+          .attr('type', 'range')
+          .attr('min', 0)
+          .attr('max', m.node_threshold)
+          .attr('step', 0.01)
+          .attr('value', visState.pruningThreshold || m.node_threshold)
+          .on('input', function() {
+            // Update state and UI immediately
+            visState.pruningThreshold = this.value
+            visState.clickedId = util.params.get('clickedId')?.replace('null', '')
+            util.params.set('pruningThreshold', this.value)
+            valueDisplay.text(parseFloat(this.value).toFixed(2))
+            
+            // Debounce the actual render
+            debouncedRender()
+          })
+        
+        var valueDisplay = sliderContainer.append('span.value-display')
+          .text(parseFloat(visState.pruningThreshold || m.node_threshold).toFixed(2))
+      }
+      
+      // Update slider properties for current graph
+      sliderContainer.select('input')
+        .attr('max', m.node_threshold)
+        .property('value', visState.pruningThreshold || m.node_threshold)
+      
+      sliderContainer.select('.value-display')
+        .text(parseFloat(visState.pruningThreshold || m.node_threshold).toFixed(2))
+      
+      sliderContainer.style('display', 'flex')
+      
+      // Ensure pruningThreshold is set
+      if (visState.pruningThreshold === undefined) {
+        visState.pruningThreshold = m.node_threshold
+      }
+    } else {
+      // Remove slider if graph doesn't support pruning
+      if (sliderContainer) {
+        sliderContainer.remove()
+        sliderContainer = null
+      }
+      delete visState.pruningThreshold
+      util.params.set('pruningThreshold', null)
+    }
+
     d3.select('.cg').html('')
     
     // Prepare options for initCg
@@ -238,25 +270,8 @@ window.init = async function(){
     
     initCg(d3.select('.cg'), visState.slug, options)
 
-    var m = graphs.find(g => g.slug == visState.slug)
-    if (!m) return
     selectSel.at({title: m.prompt})
     document.title = 'Attribution Graph: ' + m.prompt
-    
-    // Update the slider visibility if it exists
-    if (sliderContainer) {
-      if (m && typeof m.node_threshold === 'number') {
-        sliderContainer.style('display', 'flex')
-        
-        // Update slider value if it changed from the dropdown
-        if (visState.pruningThreshold !== undefined) {
-          sliderContainer.select('input').property('value', visState.pruningThreshold)
-          sliderContainer.select('.value-display').text(parseFloat(visState.pruningThreshold).toFixed(2))
-        }
-      } else {
-        sliderContainer.style('display', 'none')
-      }
-    }
   }
   render()
 }

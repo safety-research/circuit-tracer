@@ -53,22 +53,7 @@ class CircuitGraphHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
 
     def _do_GET(self):
-        # Redirect feature requests to AWS
         logger.info(f"Received request for {self.path}")
-
-        # Handle both explicit index.html requests and root path requests
-        if self.path.endswith("index.html") or self.path == "/":
-            logger.info("Serving modified index.html")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html")
-            self.end_headers()
-            with open(os.path.join(self.directory, "index.html"), "rb") as f:
-                self.wfile.write(
-                    f.read().replace(
-                        b"window.isLocalServing = false;", b"window.isLocalServing = true;"
-                    )
-                )
-            return
 
         # Handle data and graph_data requests from local storage
         if self.path.startswith(("/data/", "/graph_data/")):

@@ -47,6 +47,13 @@ def main():
         ),
     )
     attr_parser.add_argument(
+        "--dtype",
+        type=str,
+        choices=["float32", "bfloat16", "float16", "fp32", "bf16", "fp16"],
+        default="float32",
+        help="Data type for model weights (default: float32).",
+    )
+    attr_parser.add_argument(
         "--max_n_logits", type=int, default=10, help="Maximum number of logit nodes."
     )
     attr_parser.add_argument(
@@ -67,7 +74,7 @@ def main():
     attr_parser.add_argument(
         "--max_feature_nodes",
         type=int,
-        default=None,
+        default=7500,
         help="Maximum number of feature nodes.",
     )
     attr_parser.add_argument("--verbose", action="store_true", help="Display progress information.")
@@ -126,7 +133,7 @@ def main():
 
     if args.command == "attribute":
         run_attribution(args, attr_parser)
-    elif args.command == "start-server":
+    if args.command == "start-server" or args.server:
         run_server(args)
 
 
@@ -171,8 +178,22 @@ def run_attribution(args, parser):
     if create_graph_files_enabled:
         os.makedirs(args.graph_file_dir, exist_ok=True)
 
+    import torch
+
+    dtype = args.dtype
+    # Convert short dtype string to long dtype string
+    dtype_mapping = {
+        "fp32": "float32",
+        "bf16": "bfloat16",
+        "fp16": "float16",
+    }
+    if dtype in dtype_mapping:
+        dtype = dtype_mapping[dtype]
+    dtype = getattr(torch, dtype)
+
     # Run attribution
-    logging.info(f"\nGenerating attribution graph for model: {args.model}")
+    logging.info(f"Generating attribution graph for model: {args.model}")
+    logging.info(f"Loading model with dtype: {dtype}")
     logging.info(f'Input prompt: "{args.prompt}"')
     if args.graph_output_path:
         logging.info(f"Output will be saved to: {args.graph_output_path}")
@@ -182,13 +203,13 @@ def run_attribution(args, parser):
             f"(max {args.max_n_logits})"
         )
     )
-    logging.info(f"Using batch size of {args.batch_size} for backward passes\n")
+    logging.info(f"Using batch size of {args.batch_size} for backward passes")
 
     from circuit_tracer.attribution import attribute
     from circuit_tracer.replacement_model import ReplacementModel
     from circuit_tracer.utils.create_graph_files import create_graph_files
 
-    model_instance = ReplacementModel.from_pretrained(args.model, args.transcoder_set)
+    model_instance = ReplacementModel.from_pretrained(args.model, args.transcoder_set, dtype=dtype)
 
     logging.info("Running attribution...")
     graph = attribute(
@@ -209,7 +230,7 @@ def run_attribution(args, parser):
 
     # Create graph files if both slug and graph_file_dir are provided
     if create_graph_files_enabled:
-        logging.info(f"\nCreating graph files with slug: {args.slug}")
+        logging.info(f"Creating graph files with slug: {args.slug}")
         create_graph_files(
             graph_or_path=graph,  # Use the graph object directly
             slug=args.slug,
@@ -220,15 +241,11 @@ def run_attribution(args, parser):
         )
         logging.info(f"Graph JSON files written to {args.graph_file_dir}")
 
-    # Start server if requested (this happens last)
-    if args.server:
-        run_server(args)
-
 
 def run_server(args):
     from circuit_tracer.frontend.local_server import serve
 
-    logging.info(f"\nStarting server on port {args.port}...")
+    logging.info(f"Starting server on port {args.port}...")
     logging.info(f"Serving data from: {os.path.abspath(args.graph_file_dir)}")
     server = serve(data_dir=args.graph_file_dir, port=args.port)
     try:
