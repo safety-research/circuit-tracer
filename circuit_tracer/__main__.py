@@ -134,6 +134,12 @@ def main():
         help="Start a local server to visualize graphs after processing.",
     )
     attr_parser.add_argument("--port", type=int, default=8041, help="Port for the local server.")
+    attr_parser.add_argument(
+        "--features_dir",
+        type=str,
+        default=None,
+        help="Path to the directory containing feature files for local server, if using local transcoders (default: None)",
+    )
 
     # Start-server subcommand
     server_parser = subparsers.add_parser(
@@ -144,6 +150,12 @@ def main():
         type=str,
         required=True,
         help="Path to the directory containing graph JSON files.",
+    )
+    server_parser.add_argument(
+        "--features_dir",
+        type=str,
+        default=None,
+        help="Path to the directory containing feature files for local server, if using local transcoders (default: None)",
     )
     server_parser.add_argument("--port", type=int, default=8041, help="Port for the local server.")
 
@@ -183,6 +195,7 @@ def run_attribution(args, parser):
 
     # Ensure graph output directory exists if needed
     if create_graph_files_enabled:
+        assert isinstance(args.graph_file_dir, str)
         os.makedirs(args.graph_file_dir, exist_ok=True)
 
     import torch
@@ -247,11 +260,12 @@ def run_attribution(args, parser):
 
     # Create graph files if both slug and graph_file_dir are provided
     if create_graph_files_enabled:
+        assert isinstance(args.slug, str)
         logging.info(f"Creating graph files with slug: {args.slug}")
         create_graph_files(
             graph_or_path=graph,  # Use the graph object directly
             slug=args.slug,
-            scan=None,  # No scan argument needed
+            scan_name=None,  # No scan_name argument needed
             output_path=args.graph_file_dir,
             node_threshold=args.node_threshold,
             edge_threshold=args.edge_threshold,
@@ -264,7 +278,11 @@ def run_server(args):
 
     logging.info(f"Starting server on port {args.port}...")
     logging.info(f"Serving data from: {os.path.abspath(args.graph_file_dir)}")
-    server = serve(data_dir=args.graph_file_dir, port=args.port)
+    if args.features_dir:
+        if not os.path.isdir(args.features_dir):
+            raise ValueError(f"features_dir does not exist: {args.features_dir}")
+        logging.info(f"Using features directory: {os.path.abspath(args.features_dir)}")
+    server = serve(data_dir=args.graph_file_dir, port=args.port, features_dir=args.features_dir)
     try:
         logging.info("Press Ctrl+C to stop the server.")
         while True:

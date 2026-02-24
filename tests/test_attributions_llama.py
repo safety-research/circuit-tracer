@@ -15,6 +15,7 @@ from circuit_tracer.transcoder import SingleLayerTranscoder, TranscoderSet
 from circuit_tracer.transcoder.activation_functions import TopK
 from circuit_tracer.utils import get_default_device
 from tests.test_attributions_gemma import (
+    patch_tokenizer_special_ids,
     verify_feature_edges,
     verify_token_and_error_edges,
 )
@@ -46,8 +47,6 @@ def load_dummy_llama_model(cfg: HookedTransformerConfig, k: int) -> TransformerL
     model = ReplacementModel.from_config(cfg, transcoder_set)
     assert model.tokenizer is not None
 
-    ids = model.tokenizer.all_special_ids
-    type(model.tokenizer).all_special_ids = property(lambda self: [0] + ids)  # type: ignore
     for _, param in model.named_parameters():
         nn.init.uniform_(param, a=-1, b=1)
 
@@ -129,10 +128,14 @@ def test_small_llama_model():
     cfg = HookedTransformerConfig.from_dict(llama_small_cfg)
     k = 4
     model = load_dummy_llama_model(cfg, k)
-    graph = attribute(s, model)
+    assert model.tokenizer is not None
+    special_ids = [0] + model.tokenizer.all_special_ids
 
-    verify_token_and_error_edges(model, graph)
-    verify_feature_edges(model, graph)
+    with patch_tokenizer_special_ids(model, special_ids):
+        graph = attribute(s, model)
+
+        verify_token_and_error_edges(model, graph)
+        verify_feature_edges(model, graph)
 
 
 def test_large_llama_model():
@@ -208,10 +211,14 @@ def test_large_llama_model():
     cfg = HookedTransformerConfig.from_dict(llama_large_cfg)
     k = 16
     model = load_dummy_llama_model(cfg, k)
-    graph = attribute(s, model)
+    assert model.tokenizer is not None
+    special_ids = [0] + model.tokenizer.all_special_ids
 
-    verify_token_and_error_edges(model, graph)
-    verify_feature_edges(model, graph)
+    with patch_tokenizer_special_ids(model, special_ids):
+        graph = attribute(s, model)
+
+        verify_token_and_error_edges(model, graph)
+        verify_feature_edges(model, graph)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
@@ -223,6 +230,19 @@ def test_llama_3_2_1b():
 
     verify_token_and_error_edges(model, graph)
     verify_feature_edges(model, graph)
+
+
+# @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+# def test_llama_3_1_8b():
+#     s = "The National Digital Analytics Group (ND"
+#     model = ReplacementModel.from_pretrained(
+#         "meta-llama/Llama-3.1-8B", "facebook/crv-8b-instruct-transcoders", lazy_encoder=True
+#     )
+#     assert isinstance(model, TransformerLensReplacementModel)
+#     graph = attribute(s, model, batch_size=128)
+
+#     verify_token_and_error_edges(model, graph)
+#     verify_feature_edges(model, graph)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
@@ -243,4 +263,5 @@ if __name__ == "__main__":
     test_small_llama_model()
     test_large_llama_model()
     test_llama_3_2_1b()
+    # test_llama_3_1_8b()
     test_llama_3_2_1b_clt()

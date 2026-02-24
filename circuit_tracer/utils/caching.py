@@ -14,7 +14,7 @@ from circuit_tracer.transcoder.cross_layer_transcoder import load_clt, load_gemm
 from circuit_tracer.transcoder.single_layer_transcoder import (
     load_gemma_scope_2_transcoder,
     load_gemma_scope_transcoder,
-    load_relu_transcoder,
+    load_transcoder,
     load_transcoder_set,
 )
 from circuit_tracer.utils.hf_utils import (
@@ -163,7 +163,7 @@ def save_transcoders_to_cache(
     repo_info = (
         hf_uri.repo_id if hf_uri.file_path is None else hf_uri.repo_id + "//" + hf_uri.file_path
     )
-    config["scan"] = f"{repo_info}@{hf_uri.revision}" if hf_uri.revision else repo_info
+    config["scan_name"] = f"{repo_info}@{hf_uri.revision}" if hf_uri.revision else repo_info
 
     model_kind = config["model_kind"]
     cache_path = get_cached_path(hf_ref, cache_dir)
@@ -224,9 +224,10 @@ def _save_transcoder_set_to_cache(
     if "transcoders" not in config:
         # Uses snapshot_download pattern - iterate through paths
         for layer_idx, local_path in iter_transcoder_paths(config):
-            transcoder = load_relu_transcoder(
+            transcoder = load_transcoder(
                 local_path,
                 layer_idx,
+                activation_fn=config.get("activation", None),
                 device=device,
                 dtype=dtype,
                 lazy_encoder=False,
@@ -251,11 +252,12 @@ def _save_transcoder_set_to_cache(
             elif special_load_fn == "gemma-scope-2":
                 load_fn = load_gemma_scope_2_transcoder
             else:
-                load_fn = load_relu_transcoder
+                load_fn = load_transcoder
 
             transcoder = load_fn(
                 local_path,
                 layer_idx,
+                activation_fn=config.get("activation", None),
                 device=device,
                 dtype=dtype,
                 lazy_encoder=False,
@@ -284,11 +286,12 @@ def _save_transcoder_set_to_cache(
             elif special_load_fn == "gemma-scope-2":
                 load_fn = load_gemma_scope_2_transcoder
             else:
-                load_fn = load_relu_transcoder
+                load_fn = load_transcoder
 
             transcoder = load_fn(
                 local_path,
                 layer_idx,
+                activation_fn=config.get("activation", None),
                 device=device,
                 dtype=dtype,
                 lazy_encoder=False,
@@ -335,7 +338,7 @@ def _save_clt_to_cache(
             paths,
             feature_input_hook=config["feature_input_hook"],
             feature_output_hook=config["feature_output_hook"],
-            scan=config.get("scan"),
+            scan_name=config.get("scan_name"),
             device=device,
             dtype=dtype,
             lazy_decoder=False,
@@ -369,7 +372,7 @@ def _save_clt_to_cache(
             local_path,
             feature_input_hook=config["feature_input_hook"],
             feature_output_hook=config["feature_output_hook"],
-            scan=config.get("scan"),
+            scan_name=config.get("scan_name"),
             device=device,
             dtype=dtype,
             lazy_decoder=False,
@@ -418,7 +421,7 @@ def load_transcoders_from_cache(
 
         transcoder = load_transcoder_set(
             transcoder_paths,
-            scan=config.get("scan", str(cache_path)),
+            scan_name=config.get("scan_name", config.get("scan", str(cache_path))),
             feature_input_hook=config["feature_input_hook"],
             feature_output_hook=config["feature_output_hook"],
             device=device,
@@ -431,7 +434,7 @@ def load_transcoders_from_cache(
             str(cache_path),
             feature_input_hook=config["feature_input_hook"],
             feature_output_hook=config["feature_output_hook"],
-            scan=config.get("scan", str(cache_path)),
+            scan_name=config.get("scan_name", config.get("scan", str(cache_path))),
             device=device,
             dtype=dtype,
             lazy_decoder=lazy_decoder,

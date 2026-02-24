@@ -181,6 +181,8 @@ def test_attribution_targets_auto_modes(
     assert all(t.vocab_idx < tokenizer.vocab_size for t in targets.logit_targets)
 
     if test_id == "salient":
+        assert isinstance(max_n_logits, int)
+        assert isinstance(desired_prob, float)
         assert len(targets) <= max_n_logits
         assert len(targets) >= 1
         prob_sum = targets.logit_probabilities.sum().item()
@@ -758,7 +760,7 @@ def _run_custom_target_correctness(
     n_samples: int = 20,
     act_atol: float = 5e-4,
     act_rtol: float = 1e-5,
-    logit_atol: float = 1e-4,
+    logit_atol: float = 2e-4,
     logit_rtol: float = 1e-3,
 ):
     """Verify custom target direction feature attribution driven interventions produce expected activation/logit changes

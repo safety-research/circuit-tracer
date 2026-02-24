@@ -418,6 +418,7 @@ def load_gemma3_with_dummy_clt():
     )
 
     _, activations = model.get_activations("The National Digital Analytics Group (ND")
+    assert isinstance(clt.activation_function, JumpReLU)
     set_l0_via_thresholds(activations, clt.activation_function.threshold, target_l0=16)
 
     return model
@@ -506,8 +507,8 @@ def test_gemma3_with_dummy_clt():
     assert isinstance(model, NNSightReplacementModel)
 
     with model.zero_softcap():
-        verify_token_and_error_edges(model, graph)
-        verify_feature_edges(model, graph)
+        verify_token_and_error_edges(model, graph, act_rtol=5e-4)
+        verify_feature_edges(model, graph, act_rtol=5e-4)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")

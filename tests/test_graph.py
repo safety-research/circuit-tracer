@@ -6,6 +6,7 @@ import torch
 from transformer_lens import HookedTransformerConfig
 
 from circuit_tracer.attribution.targets import LogitTarget
+from circuit_tracer.frontend.graph_models import Node
 from circuit_tracer.graph import Graph, compute_edge_influence, compute_node_influence
 from circuit_tracer.utils import get_default_device
 
@@ -335,7 +336,7 @@ def test_graph_from_pt_legacy_tensor_format():
         "input_tokens": torch.tensor([1, 2, 3]),
         "selected_features": torch.tensor([0]),
         "activation_values": torch.tensor([1.5]),
-        "scan": None,
+        "scan_name": None,
     }
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pt") as tmp:
@@ -356,3 +357,22 @@ def test_graph_from_pt_legacy_tensor_format():
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+
+def test_error_node_id_format_no_collision():
+    """Error node IDs must use {layer}_-1_{pos}, not 0_{layer}_{pos}.
+
+    The old format caused real collisions: error(layer=0, pos=1) → "0_0_1"
+    matches feature(layer=0, feat_idx=0, pos=1) → "0_0_1".
+    """
+    error = Node.error_node(layer=0, pos=1)
+    feature = Node.feature_node(layer=0, pos=1, feat_idx=0)
+
+    assert error.node_id != feature.node_id, "error node and CLT feature node share a node_id"
+    assert error.node_id == "0_-1_1", f"unexpected error node_id format: {error.node_id!r}"
+    assert feature.node_id == "0_0_1", f"unexpected feature node_id format: {feature.node_id!r}"
+
+    for layer in range(3):
+        for pos in range(2):
+            e = Node.error_node(layer=layer, pos=pos)
+            assert e.node_id == f"{layer}_-1_{pos}"

@@ -1,4 +1,5 @@
 import gc
+from contextlib import contextmanager
 from functools import partial
 
 import numpy as np
@@ -187,6 +188,18 @@ def verify_feature_edges(
         verify_intervention(expected_effects, layer, pos, feature_idx, new_activation)
 
 
+@contextmanager
+def patch_tokenizer_special_ids(model: TransformerLensReplacementModel, special_ids: list[int]):
+    assert model.tokenizer is not None
+    tokenizer_class = type(model.tokenizer)
+    original_all_special_ids = tokenizer_class.all_special_ids  # type: ignore
+    try:
+        tokenizer_class.all_special_ids = property(lambda self: special_ids)  # type: ignore
+        yield
+    finally:
+        tokenizer_class.all_special_ids = original_all_special_ids  # type: ignore
+
+
 def load_dummy_gemma_model(cfg: HookedTransformerConfig) -> TransformerLensReplacementModel:
     transcoders = {
         layer_idx: SingleLayerTranscoder(
@@ -205,8 +218,6 @@ def load_dummy_gemma_model(cfg: HookedTransformerConfig) -> TransformerLensRepla
     )
     model = ReplacementModel.from_config(cfg, transcoder_set)
     assert isinstance(model, TransformerLensReplacementModel)
-
-    type(model.tokenizer).all_special_ids = property(lambda self: [0])  # type: ignore
 
     for _, param in model.named_parameters():
         nn.init.uniform_(param, a=-1, b=1)
@@ -291,10 +302,12 @@ def test_small_gemma_model():
     }
     cfg = HookedTransformerConfig.from_dict(gemma_small_cfg)
     model = load_dummy_gemma_model(cfg)
-    graph = attribute(s, model)
 
-    verify_token_and_error_edges(model, graph)
-    verify_feature_edges(model, graph)
+    with patch_tokenizer_special_ids(model, [0]):
+        graph = attribute(s, model)
+
+        verify_token_and_error_edges(model, graph)
+        verify_feature_edges(model, graph)
 
 
 def test_large_gemma_model():
@@ -386,10 +399,12 @@ def test_large_gemma_model():
     }
     cfg = HookedTransformerConfig.from_dict(gemma_large_cfg)
     model = load_dummy_gemma_model(cfg)
-    graph = attribute(s, model)
 
-    verify_token_and_error_edges(model, graph)
-    verify_feature_edges(model, graph)
+    with patch_tokenizer_special_ids(model, [0]):
+        graph = attribute(s, model)
+
+        verify_token_and_error_edges(model, graph)
+        verify_feature_edges(model, graph)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")

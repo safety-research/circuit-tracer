@@ -69,7 +69,7 @@ class TransformerLensReplacementModel(HookedTransformer):
     feature_input_hook: str
     feature_output_hook: str
     skip_transcoder: bool
-    scan: str | list[str] | None
+    scan_name: str | list[str] | None
     backend: Literal["transformerlens"]
 
     @classmethod
@@ -120,7 +120,7 @@ class TransformerLensReplacementModel(HookedTransformer):
         return model
 
     @classmethod
-    def from_pretrained(
+    def from_pretrained(  # type:ignore
         cls,
         model_name: str,
         transcoder_set: str,
@@ -166,12 +166,16 @@ class TransformerLensReplacementModel(HookedTransformer):
         self.backend = "transformerlens"
         transcoder_set.to(self.cfg.device, self.cfg.dtype)
 
+        # special case to zero out <bos><start_of_turn>user\n for gemmascope 2 (-it) transcoders
+        gemma_3_it = "gemma-3" in self.cfg.model_name and self.cfg.model_name.endswith("-it")
+        self.zero_positions = slice(0, 4) if gemma_3_it else slice(0, 1)
+
         self.transcoders = transcoder_set
         self.feature_input_hook = transcoder_set.feature_input_hook
         self.original_feature_output_hook = transcoder_set.feature_output_hook
         self.feature_output_hook = transcoder_set.feature_output_hook + ".hook_out_grad"
         self.skip_transcoder = transcoder_set.skip_connection
-        self.scan = transcoder_set.scan
+        self.scan_name = transcoder_set.scan_name
 
         for block in self.blocks:
             block.mlp = ReplacementMLP(block.mlp)  # type: ignore
@@ -288,7 +292,7 @@ class TransformerLensReplacementModel(HookedTransformer):
             )
 
             if not append:
-                transcoder_acts[0] = 0
+                transcoder_acts[self.zero_positions] = 0
 
             if sparse:
                 transcoder_acts = transcoder_acts.to_sparse()
@@ -380,9 +384,24 @@ class TransformerLensReplacementModel(HookedTransformer):
         if tokens.ndim > 1:
             raise ValueError(f"Tensor must be 1-D, got shape {tokens.shape}")
 
+        tokens = tokens.to(self.cfg.device)
+
+        gemma_3_it = "gemma-3" in self.cfg.model_name and self.cfg.model_name.endswith("-it")
+        if gemma_3_it:
+            ignore_prefix = torch.tensor(
+                [2, 105, 2364, 107], dtype=tokens.dtype, device=tokens.device
+            )
+            tokenization_error = (
+                "Input tokens should start with <bos><start_of_turn>user\n, but got {tokens}"
+            )
+            assert tokens.size(0) >= 4 and torch.all(tokens[:4] == ignore_prefix), (
+                tokenization_error.format(tokens=self.tokenizer.decode(tokens.cpu().tolist()))  # type: ignore
+            )
+            return tokens
+
         # Check if a special token is already present at the beginning
         if tokens[0] in self.tokenizer.all_special_ids:  # type: ignore
-            return tokens.to(self.cfg.device)
+            return tokens
 
         # Prepend a special token to avoid artifacts at position 0
         candidate_bos_token_ids = [
@@ -432,12 +451,14 @@ class TransformerLensReplacementModel(HookedTransformer):
         mlp_in_cache = torch.cat(list(mlp_in_cache.values()), dim=0)
         mlp_out_cache = torch.cat(list(mlp_out_cache.values()), dim=0)
 
-        attribution_data = self.transcoders.compute_attribution_components(mlp_in_cache)
+        attribution_data = self.transcoders.compute_attribution_components(
+            mlp_in_cache, self.zero_positions
+        )
 
         # Compute error vectors
         error_vectors = mlp_out_cache - attribution_data["reconstruction"]
 
-        error_vectors[:, 0] = 0
+        error_vectors[:, self.zero_positions] = 0
         token_vectors = self.W_E[tokens].detach()  # (n_pos, d_model)
 
         return AttributionContext(
@@ -696,7 +717,7 @@ class TransformerLensReplacementModel(HookedTransformer):
         ]
 
         all_hooks = freeze_hooks + activation_hooks + delta_hooks + intervention_hooks
-        cached_logits = [] if using_past_kv_cache else [None]
+        cached_logits = []
 
         def logit_cache_hook(activations, hook):
             # we need to manually apply the softcap (if used by the model), as it comes post-hook
@@ -706,10 +727,7 @@ class TransformerLensReplacementModel(HookedTransformer):
                 )
             else:
                 logits = activations.clone()
-            if using_past_kv_cache:
-                cached_logits.append(logits)
-            else:
-                cached_logits[0] = logits
+            cached_logits.append(logits)
 
         all_hooks.append(("unembed.hook_post", logit_cache_hook))
 
@@ -799,7 +817,7 @@ class TransformerLensReplacementModel(HookedTransformer):
         sparse: bool = False,
         return_activations: bool = True,
         **kwargs,
-    ) -> tuple[str, torch.Tensor, torch.Tensor | None]:
+    ) -> tuple[str, torch.Tensor, torch.Tensor | None]:  # logits: (seq_len, vocab_size)
         """Given the input, and a dictionary of features to intervene on, performs the
         intervention, and generates a continuation, along with the logits and activations at
         each generation position.
@@ -810,6 +828,12 @@ class TransformerLensReplacementModel(HookedTransformer):
         process the one new token per step; if it is False, the model will generate by doing a full forward pass across
         all tokens. Note that due to numerical precision issues, you are only guaranteed that the logits / activations of
         model.feature_intervention_generate(s, ...) are equivalent to model.feature_intervention(s, ...) if kv_cache is False.
+
+        .. note::
+            Unlike ``feature_intervention`` (which returns 3-D logits of shape
+            ``(batch, seq_len, vocab_size)``), this method returns **2-D** logits of shape
+            ``(seq_len, vocab_size)`` with no batch dimension, since generation is always
+            batch=1. This was changed in commit a1ca600.
 
         Args:
             input (_type_): the input prompt to intervene on
@@ -829,6 +853,10 @@ class TransformerLensReplacementModel(HookedTransformer):
                 activation computation is skipped for layers not being intervened on (when
                 constrained_layers is not set), saving time. Returns None for activations.
                 Defaults to True.
+
+        Returns:
+            tuple[str, torch.Tensor, torch.Tensor | None]: A tuple of (generated_text,
+                logits, activations) where logits has shape ``(seq_len, vocab_size)`` (2-D).
         """
 
         feature_intervention_hook_output = self._get_feature_intervention_hooks(

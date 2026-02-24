@@ -273,7 +273,7 @@ def _run_attribution(
         selected_features=selected_features,
         adjacency_matrix=full_edge_matrix,
         cfg=model.cfg,
-        scan=model.scan,
+        scan_name=model.scan_name,
     )
 
     total_time = time.time() - start_time
