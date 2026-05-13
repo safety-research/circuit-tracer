@@ -6,7 +6,13 @@ import torch
 from transformer_lens import HookedTransformerConfig
 
 from circuit_tracer.attribution.targets import LogitTarget
-from circuit_tracer.graph import Graph, compute_edge_influence, compute_node_influence
+from circuit_tracer.graph import (
+    Graph,
+    compute_edge_influence,
+    compute_node_influence,
+    compute_partial_influences,
+    normalize_matrix,
+)
 from circuit_tracer.utils import get_default_device
 
 
@@ -15,6 +21,91 @@ def cleanup_cuda():
     yield
     torch.cuda.empty_cache()
     gc.collect()
+
+
+def test_normalize_matrix_avoids_float32_row_l1_overflow():
+    matrix = torch.full((1, 4), 1e38, dtype=torch.float32)
+
+    normalized = normalize_matrix(matrix)
+
+    assert torch.isfinite(normalized).all()
+    assert torch.allclose(normalized, torch.full_like(normalized, 0.25))
+
+
+def test_normalize_matrix_matches_safe_finite_rows():
+    matrix = torch.tensor([[3.0, -1.0, 0.0], [-2.0, 2.0, 4.0], [1e-20, 0.0, 0.0]])
+
+    normalized = normalize_matrix(matrix)
+
+    expected = matrix.abs() / matrix.abs().sum(dim=1, keepdim=True).clamp(min=1e-10)
+
+    assert torch.allclose(normalized, expected)
+
+
+def test_normalize_matrix_keeps_zero_rows_zero():
+    matrix = torch.zeros((2, 3), dtype=torch.float32)
+
+    normalized = normalize_matrix(matrix)
+
+    assert torch.equal(normalized, matrix)
+
+
+def test_normalize_matrix_infinite_rows_match_existing_nonfinite_behavior():
+    matrix = torch.tensor([[float("inf"), 1.0]], dtype=torch.float32)
+
+    normalized = normalize_matrix(matrix)
+
+    assert torch.isnan(normalized[0, 0])
+    assert normalized[0, 1] == 0
+
+
+def test_normalize_matrix_nan_rows_propagate_nan():
+    matrix = torch.tensor([[float("nan"), 1.0]], dtype=torch.float32)
+
+    normalized = normalize_matrix(matrix)
+
+    assert torch.isnan(normalized).all()
+
+
+def test_normalize_matrix_integer_inputs_return_float_values():
+    matrix = torch.tensor([[1, 3]], dtype=torch.int64)
+
+    normalized = normalize_matrix(matrix)
+
+    assert torch.is_floating_point(normalized)
+    assert torch.allclose(normalized, torch.tensor([[0.25, 0.75]]))
+
+
+def test_normalize_matrix_preserves_autograd():
+    matrix = torch.tensor([[1.0, 3.0]], requires_grad=True)
+
+    normalized = normalize_matrix(matrix)
+    normalized.sum().backward()
+
+    assert matrix.grad is not None
+
+
+@pytest.mark.parametrize("row", [[[0.0, 0.0]], [[1e-20, 0.0]]])
+def test_normalize_matrix_clamped_rows_have_finite_gradients(row):
+    matrix = torch.tensor(row, requires_grad=True)
+
+    normalized = normalize_matrix(matrix)
+    normalized.sum().backward()
+
+    assert matrix.grad is not None
+    assert torch.isfinite(matrix.grad).all()
+
+
+def test_compute_partial_influences_avoids_float32_row_l1_overflow():
+    edge_matrix = torch.tensor([[1e38, 1e38, 0.0]], dtype=torch.float32)
+    logit_p = torch.tensor([1.0], dtype=torch.float32)
+    row_to_node_index = torch.tensor([2], dtype=torch.int32)
+
+    influences = compute_partial_influences(edge_matrix, logit_p, row_to_node_index)
+
+    expected = torch.tensor([0.5, 0.5, 0.0], device=influences.device)
+    assert torch.isfinite(influences).all()
+    assert torch.allclose(influences, expected)
 
 
 def test_small_graph():
