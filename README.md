@@ -157,7 +157,7 @@ circuit-tracer attribute \
 ### Graph Annotation
 When using the `--server` option, your browser will open to a local visualization interface. The interface is the same as in [the original papers](https://transformer-circuits.pub/2025/attribution-graphs/methods.html) (frontend available [here](https://github.com/anthropics/attribution-graphs-frontend)).
 - **Select a node**: Click on a node.
-- **Pin / unpin a node to subgraph pane**: Ctrl+click/Commmand+click the node.
+- **Pin / unpin a node to subgraph pane**: Ctrl+click/Command+click the node.
 - **Annotate a node**: Click on the "Edit" button on the right side of the window while a node is selected to edit its annotation.
 - **Group nodes**: Hold G and click on nodes to group them together into a supernode. Hold G and click on the x next to a supernode to ungroup all of them.
 - **Annotate supernode / node group**: click on the label below the supernode to edit the supernode annotation.
