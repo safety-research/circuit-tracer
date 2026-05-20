@@ -116,21 +116,21 @@ def create_used_nodes_and_edges(graph: Graph, nodes, edge_mask):
     return used_nodes, used_edges
 
 
-def build_model(graph: Graph, used_nodes, used_edges, slug, scan, node_threshold, tokenizer):
+def build_model(graph: Graph, used_nodes, used_edges, slug, scan_name, node_threshold, tokenizer):
     """Build the full model object."""
     start_time = time.time()
 
-    if isinstance(scan, list):
-        transcoder_list = scan
+    if isinstance(scan_name, list):
+        transcoder_list = scan_name
         transcoder_list_str = "-".join(transcoder_list)
         transcoder_list_hash = hash(transcoder_list_str)
-        scan = "custom-" + str(transcoder_list_hash)
+        scan_name = "custom-" + str(transcoder_list_hash)
     else:
         transcoder_list = []
 
     meta = Metadata(
         slug=slug,
-        scan=scan,
+        scan=scan_name,
         transcoder_list=transcoder_list,
         prompt_tokens=[tokenizer.decode(t) for t in graph.input_tokens],
         prompt=graph.input_string,
@@ -162,7 +162,7 @@ def create_graph_files(
     graph_or_path: Graph | str,
     slug: str,
     output_path,
-    scan=None,
+    scan_name=None,
     node_threshold=0.8,
     edge_threshold=0.98,
 ):
@@ -181,13 +181,13 @@ def create_graph_files(
     else:
         os.makedirs(output_path, exist_ok=True)
 
-    if scan is None:
-        if graph.scan is None:
+    if scan_name is None:
+        if graph.scan_name is None:
             raise ValueError(
-                "Neither scan nor graph.scan was set. One must be set to identify "
+                "Neither scan_name nor graph.scan_name was set. One must be set to identify "
                 "which transcoders were used when creating the graph."
             )
-        scan = graph.scan
+        scan_name = graph.scan_name
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     graph.to(device)
@@ -199,7 +199,7 @@ def create_graph_files(
     tokenizer = AutoTokenizer.from_pretrained(graph.cfg.tokenizer_name)
     nodes = create_nodes(graph, node_mask, tokenizer, cumulative_scores)
     used_nodes, used_edges = create_used_nodes_and_edges(graph, nodes, edge_mask)
-    model = build_model(graph, used_nodes, used_edges, slug, scan, node_threshold, tokenizer)
+    model = build_model(graph, used_nodes, used_edges, slug, scan_name, node_threshold, tokenizer)
 
     # Write the output locally
     with open(os.path.join(output_path, f"{slug}.json"), "w") as f:

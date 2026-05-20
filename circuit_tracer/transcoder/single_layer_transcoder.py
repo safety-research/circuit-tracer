@@ -241,7 +241,7 @@ class TranscoderSet(nn.Module):
         d_transcoder: Common feature dimension across all transcoders
         feature_input_hook: Hook point where features read from (e.g., "hook_resid_mid")
         feature_output_hook: Hook point where features write to (e.g., "hook_mlp_out")
-        scan: Optional identifier to identify corresponding feature visualization
+        scan_name: Optional identifier to identify corresponding feature visualization
         skip_connection: Whether transcoders include learned skip connections
     """
 
@@ -250,7 +250,7 @@ class TranscoderSet(nn.Module):
         transcoders: dict[int, SingleLayerTranscoder],
         feature_input_hook: str,
         feature_output_hook: str,
-        scan: str | list[str] | None = None,
+        scan_name: str | list[str] | None = None,
     ):
         super().__init__()
         # Validate that we have continuous layers from 0 to max
@@ -273,7 +273,7 @@ class TranscoderSet(nn.Module):
         # Store hook configuration
         self.feature_input_hook = feature_input_hook
         self.feature_output_hook = feature_output_hook
-        self.scan = scan
+        self.scan_name = scan_name
         self.skip_connection = self.transcoders[0].W_skip is not None
 
     def __len__(self):
@@ -563,7 +563,7 @@ def load_gemma_scope_2_transcoder(
 
 def load_transcoder_set(
     transcoder_paths: dict,
-    scan: str,
+    scan_name: str,
     feature_input_hook: str,
     feature_output_hook: str,
     device: torch.device | None = None,
@@ -581,7 +581,7 @@ def load_transcoder_set(
 
     Args:
         transcoder_paths: Dictionary mapping layer indices to transcoder paths
-        scan: Scan identifier
+        scan_name: Scan identifier
         feature_input_hook: Hook point where features read from
         feature_output_hook: Hook point where features write to
         device (torch.device | None, optional): Device to load to
@@ -596,7 +596,7 @@ def load_transcoder_set(
     """
 
     if activation == "topk":
-        if scan == "facebook/crv-8b-instruct-transcoders":
+        if scan_name == "facebook/crv-8b-instruct-transcoders":
             warnings.warn(
                 """This top-k transcoder (facebook/crv-8b-instruct-transcoders) has a hardcoded value of k = 128.
                 In general, k should be set in the config.yaml"""
@@ -640,5 +640,5 @@ def load_transcoder_set(
         transcoders,
         feature_input_hook=feature_input_hook,
         feature_output_hook=feature_output_hook,
-        scan=scan,
+        scan_name=scan_name,
     )

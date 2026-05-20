@@ -75,7 +75,7 @@ def test_transcoder_set_attribution_components(create_test_transcoder_file, skip
 
     transcoder_set = load_transcoder_set(
         transcoder_paths=paths,
-        scan="test_scan",
+        scan_name="test_scan",
         feature_input_hook="hook_resid_mid",
         feature_output_hook="hook_mlp_out",
         device=torch.device("cpu"),

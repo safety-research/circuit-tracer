@@ -69,7 +69,7 @@ class TransformerLensReplacementModel(HookedTransformer):
     feature_input_hook: str
     feature_output_hook: str
     skip_transcoder: bool
-    scan: str | list[str] | None
+    scan_name: str | list[str] | None
     backend: Literal["transformerlens"]
 
     @classmethod
@@ -120,7 +120,7 @@ class TransformerLensReplacementModel(HookedTransformer):
         return model
 
     @classmethod
-    def from_pretrained(
+    def from_pretrained(  # type:ignore
         cls,
         model_name: str,
         transcoder_set: str,
@@ -175,7 +175,7 @@ class TransformerLensReplacementModel(HookedTransformer):
         self.original_feature_output_hook = transcoder_set.feature_output_hook
         self.feature_output_hook = transcoder_set.feature_output_hook + ".hook_out_grad"
         self.skip_transcoder = transcoder_set.skip_connection
-        self.scan = transcoder_set.scan
+        self.scan_name = transcoder_set.scan_name
 
         for block in self.blocks:
             block.mlp = ReplacementMLP(block.mlp)  # type: ignore

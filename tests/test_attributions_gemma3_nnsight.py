@@ -416,6 +416,7 @@ def load_gemma3_with_dummy_clt():
     )
 
     _, activations = model.get_activations("The National Digital Analytics Group (ND")
+    assert isinstance(clt.activation_function, JumpReLU)
     set_l0_via_thresholds(activations, clt.activation_function.threshold, target_l0=16)
 
     return model

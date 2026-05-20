@@ -26,7 +26,7 @@ class Graph:
     logit_probabilities: torch.Tensor
     vocab_size: int
     cfg: UnifiedConfig
-    scan: str | list[str] | None
+    scan_name: str | list[str] | None
     n_pos: int
 
     def __init__(
@@ -40,7 +40,7 @@ class Graph:
         activation_values: torch.Tensor,
         logit_targets: list[LogitTarget],
         logit_probabilities: torch.Tensor,
-        scan: str | list[str] | None = None,
+        scan_name: str | list[str] | None = None,
         vocab_size: int | None = None,
     ):
         """
@@ -67,8 +67,8 @@ class Graph:
             activation_values (torch.Tensor): Activation values for selected features.
             logit_targets: List of LogitTarget records describing each logit target.
             logit_probabilities: Tensor of logit target probabilities/weights.
-            scan (Union[str,List[str]] | None, optional): The identifier of the
-                transcoders used in the graph. Without a scan, the graph cannot be uploaded
+            scan_name (Union[str,List[str]] | None, optional): The identifier of the
+                transcoders used in the graph. Without a scan_name, the graph cannot be uploaded
                 (since we won't know what transcoders were used). Defaults to None
             vocab_size: Vocabulary size. If not provided, defaults to cfg.d_vocab.
         """
@@ -83,9 +83,9 @@ class Graph:
         self.n_pos = len(input_tokens)
         self.active_features = active_features
         self.input_tokens = input_tokens
-        if scan is None:
-            print("Graph loaded without scan to identify it. Uploading will not be possible.")
-        self.scan = scan
+        if scan_name is None:
+            print("Graph loaded without scan_name to identify it. Uploading will not be possible.")
+        self.scan_name = scan_name
         self.selected_features = selected_features
         self.activation_values = activation_values
 
@@ -149,7 +149,7 @@ class Graph:
             "input_tokens": self.input_tokens,
             "selected_features": self.selected_features,
             "activation_values": self.activation_values,
-            "scan": self.scan,
+            "scan_name": self.scan_name,
         }
         torch.save(d, path)
 
@@ -169,6 +169,9 @@ class Graph:
             Graph: the Graph saved at the specified path
         """
         d = torch.load(path, weights_only=False, map_location=map_location)
+        # BC: rename legacy "scan" key to "scan_name"
+        if "scan" in d and "scan_name" not in d:
+            d["scan_name"] = d.pop("scan")
         # BC: convert legacy tensor logit_targets to LogitTarget list
         lt = d.get("logit_targets")
         if isinstance(lt, torch.Tensor):

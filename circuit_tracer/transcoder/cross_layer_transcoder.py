@@ -44,7 +44,7 @@ class CrossLayerTranscoder(torch.nn.Module):
         lazy_decoder: Whether to load decoder weights on-demand to save memory
         feature_input_hook: Hook point where features read from (e.g., "hook_resid_mid")
         feature_output_hook: Hook point where features write to (e.g., "hook_mlp_out")
-        scan: Optional identifier for feature visualization
+        scan_name: Optional identifier for feature visualization
     """
 
     def __init__(
@@ -58,7 +58,7 @@ class CrossLayerTranscoder(torch.nn.Module):
         lazy_encoder=False,
         feature_input_hook: str = "hook_resid_mid",
         feature_output_hook: str = "hook_mlp_out",
-        scan: str | list[str] | None = None,
+        scan_name: str | list[str] | None = None,
         device: torch.device | None = None,
         dtype: torch.dtype = torch.bfloat16,
         clt_path: str | None = None,
@@ -78,7 +78,7 @@ class CrossLayerTranscoder(torch.nn.Module):
         self.feature_input_hook = feature_input_hook
         self.feature_output_hook = feature_output_hook
         self.skip_connection = skip_connection
-        self.scan = scan
+        self.scan_name = scan_name
 
         if activation_function == "jump_relu":
             self.activation_function = JumpReLU(
@@ -372,6 +372,7 @@ class CrossLayerTranscoder(torch.nn.Module):
             }
 
             if has_threshold:
+                assert isinstance(self.activation_function, JumpReLU)
                 enc_dict[f"threshold_{i}"] = self.activation_function.threshold[i].squeeze(0).cpu()
 
             enc_path = os.path.join(save_path, f"W_enc_{i}.safetensors")
@@ -391,7 +392,7 @@ def load_clt(
     clt_path: str,
     feature_input_hook: str = "hook_resid_mid",
     feature_output_hook: str = "hook_mlp_out",
-    scan: str | list[str] | None = None,
+    scan_name: str | list[str] | None = None,
     device: torch.device | None = None,
     dtype: torch.dtype = torch.bfloat16,
     lazy_decoder: bool = True,
@@ -406,7 +407,7 @@ def load_clt(
         lazy_encoder: Whether to load encoder weights on-demand
         feature_input_hook: Hook point where features read from
         feature_output_hook: Hook point where features write to
-        scan: Optional identifier for feature visualization
+        scan_name: Optional identifier for feature visualization
         device: Device to load tensors to (defaults to auto-detected)
 
     Returns:
@@ -436,7 +437,7 @@ def load_clt(
             lazy_encoder=lazy_encoder,
             feature_input_hook=feature_input_hook,
             feature_output_hook=feature_output_hook,
-            scan=scan,
+            scan_name=scan_name,
             dtype=dtype,
             clt_path=clt_path,
         )
@@ -450,7 +451,7 @@ def load_gemma_scope_2_clt(
     paths: dict[int, str],
     feature_input_hook: str = "hook_resid_mid",
     feature_output_hook: str = "hook_mlp_out",
-    scan: str | list[str] | None = None,
+    scan_name: str | list[str] | None = None,
     device: torch.device | None = None,
     dtype: torch.dtype = torch.bfloat16,
     lazy_decoder: bool = False,
@@ -462,7 +463,7 @@ def load_gemma_scope_2_clt(
         path: Path to the checkpoint file
         feature_input_hook: Hook point where features read from
         feature_output_hook: Hook point where features write to
-        scan: Optional identifier for feature visualization
+        scan_name: Optional identifier for feature visualization
         device: Device to load to
         dtype: Data type to use
         lazy_decoder: Whether to use lazy loading for decoder weights (not supported for GemmaScope2 format)
@@ -539,7 +540,7 @@ def load_gemma_scope_2_clt(
             lazy_encoder=False,
             feature_input_hook=feature_input_hook,
             feature_output_hook=feature_output_hook,
-            scan=scan,
+            scan_name=scan_name,
             dtype=dtype,
         )
 
@@ -575,6 +576,7 @@ def _load_state_dict(
         )
 
     # Only create W_enc if not lazy
+    W_enc = None
     if not lazy_encoder:
         W_enc = torch.zeros(n_layers, d_transcoder, d_model, device=device, dtype=dtype)
         state_dict["W_enc"] = W_enc
@@ -587,7 +589,7 @@ def _load_state_dict(
             b_enc[i] = f.get_tensor(f"b_enc_{i}").to(dtype)
 
             # Only load W_enc if not lazy
-            if not lazy_encoder:
+            if W_enc is not None:
                 W_enc[i] = f.get_tensor(f"W_enc_{i}").to(dtype)
 
             if has_threshold:

@@ -409,6 +409,7 @@ def load_large_gpt_oss_model_with_dummy_clt():
 
     s = torch.tensor([0, 102, 20, 57, 21])
     _, activations = model.get_activations(s)
+    assert isinstance(clt.activation_function, JumpReLU)
     set_l0_via_thresholds(activations, clt.activation_function.threshold, target_l0=16)
 
     return model

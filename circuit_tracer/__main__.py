@@ -263,7 +263,7 @@ def run_attribution(args, parser):
         create_graph_files(
             graph_or_path=graph,  # Use the graph object directly
             slug=args.slug,
-            scan=None,  # No scan argument needed
+            scan_name=None,  # No scan_name argument needed
             output_path=args.graph_file_dir,
             node_threshold=args.node_threshold,
             edge_threshold=args.edge_threshold,

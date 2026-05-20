@@ -113,7 +113,7 @@ def load_transcoder_from_hub(
     repo_info = (
         hf_uri.repo_id if hf_uri.file_path is None else hf_uri.repo_id + "//" + hf_uri.file_path
     )
-    config["scan"] = f"{repo_info}@{hf_uri.revision}" if hf_uri.revision else repo_info
+    config["scan_name"] = f"{repo_info}@{hf_uri.revision}" if hf_uri.revision else repo_info
 
     return load_transcoders(config, device, dtype, lazy_encoder, lazy_decoder), config
 
@@ -147,7 +147,7 @@ def load_transcoders(
 
         return load_transcoder_set(
             transcoder_paths,
-            scan=config["scan"],
+            scan_name=config["scan_name"],
             feature_input_hook=config["feature_input_hook"],
             feature_output_hook=config["feature_output_hook"],
             special_load_fn=special_load_fn,
@@ -190,7 +190,7 @@ def load_transcoders(
 
         return load_fn(
             local_path,  # type:ignore
-            scan=config["scan"],
+            scan_name=config["scan_name"],
             feature_input_hook=config["feature_input_hook"],
             feature_output_hook=config["feature_output_hook"],
             lazy_decoder=lazy_decoder,

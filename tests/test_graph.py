@@ -335,7 +335,7 @@ def test_graph_from_pt_legacy_tensor_format():
         "input_tokens": torch.tensor([1, 2, 3]),
         "selected_features": torch.tensor([0]),
         "activation_values": torch.tensor([1.5]),
-        "scan": None,
+        "scan_name": None,
     }
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pt") as tmp:

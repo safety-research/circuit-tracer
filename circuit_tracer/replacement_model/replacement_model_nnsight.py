@@ -59,7 +59,7 @@ class NNSightReplacementModel(LanguageModel):
     embed_loc: nn.Module
     unembed_loc: nn.Module
     skip_transcoder: bool
-    scan: str | list[str] | None
+    scan_name: str | list[str] | None
     backend: Literal["nnsight"]
 
     @classmethod
@@ -251,7 +251,7 @@ class NNSightReplacementModel(LanguageModel):
         self.unembed_weight = cast(
             torch.Tensor, self._resolve_attr(self, nnsight_config.unembed_weight)
         )
-        self.scan = transcoder_set.scan
+        self.scan_name = transcoder_set.scan_name
 
         # Make sure the replacement model is entirely frozen by default.
         for param in self.parameters():
@@ -345,7 +345,7 @@ class NNSightReplacementModel(LanguageModel):
             else:
                 if append:
                     activation_cache = torch.stack(
-                        [torch.cat(acts, dim=0) for acts in activation_matrix]
+                        [torch.cat(acts, dim=0) for acts in activation_matrix]  # type: ignore
                     )
                 else:
                     activation_cache = torch.stack(activation_matrix)  # type: ignore
