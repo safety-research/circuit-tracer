@@ -181,6 +181,8 @@ def test_attribution_targets_auto_modes(
     assert all(t.vocab_idx < tokenizer.vocab_size for t in targets.logit_targets)
 
     if test_id == "salient":
+        assert isinstance(max_n_logits, int)
+        assert isinstance(desired_prob, float)
         assert len(targets) <= max_n_logits
         assert len(targets) >= 1
         prob_sum = targets.logit_probabilities.sum().item()
