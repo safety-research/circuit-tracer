@@ -61,14 +61,20 @@ class Node(BaseModel):
     @classmethod
     def error_node(cls, layer, pos, influence=None):
         """Create an error node."""
-        reverse_ctx_idx = 0
         return cls(
             node_id=f"{layer}_-1_{pos}",
             feature=-1,
             layer=str(layer),
             ctx_idx=pos,
             feature_type="mlp reconstruction error",
-            jsNodeId=f"{layer}_{pos}-{reverse_ctx_idx}",
+            # Error nodes carry feature index -1 (never a real feature index), so
+            # the "-1" slot keeps the jsNodeId from aliasing a feature node's
+            # f"{layer}_{feat_idx}-{...}" (the original f"{layer}_{pos}-0" aliased a
+            # feature whose feat_idx equalled pos, e.g. both rendered "1_1-0").
+            # The position is kept in the final slot because there is exactly one
+            # error node per (layer, pos); a constant there would collapse every
+            # error node at a layer onto a single jsNodeId.
+            jsNodeId=f"{layer}_-1-{pos}",
             influence=influence,
         )
 
