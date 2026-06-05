@@ -182,8 +182,83 @@ class Graph:
 
 
 def normalize_matrix(matrix: torch.Tensor) -> torch.Tensor:
-    normalized = matrix.abs()
-    return normalized / normalized.sum(dim=1, keepdim=True).clamp(min=1e-10)
+    return _normalize_abs_rows(matrix.abs(), clamp_min=1e-10)
+
+
+def _normalize_abs_rows(
+    abs_matrix: torch.Tensor, clamp_min: float, *, in_place: bool = False
+) -> torch.Tensor:
+    """Normalize non-negative rows by L1 norm without overflowing row sums.
+
+    This preserves ``abs_matrix / abs_matrix.sum(dim=1).clamp(min=clamp_min)``
+    for finite rows, but computes the denominator as ``row_abs_max * scaled_l1``
+    and divides in stages so large fp32 rows do not overflow to ``inf``. Set
+    ``in_place=True`` only when callers do not need gradients through
+    ``abs_matrix``.
+    """
+    if abs_matrix.ndim != 2:
+        raise ValueError("abs_matrix must be rank-2")
+    if not torch.is_floating_point(abs_matrix):
+        abs_matrix = abs_matrix.to(torch.get_default_dtype())
+
+    if abs_matrix.shape[1] == 0:
+        return abs_matrix
+
+    row_abs_max = abs_matrix.amax(dim=1, keepdim=True)
+    finite_nonzero_rows = ((row_abs_max > 0) & torch.isfinite(row_abs_max)).squeeze(1)
+    nan_rows = torch.isnan(row_abs_max)
+
+    if not in_place:
+        scale = torch.where(
+            finite_nonzero_rows.unsqueeze(1), row_abs_max, torch.ones_like(row_abs_max)
+        )
+        scaled_matrix = abs_matrix / scale
+
+        row_l1_scaled = scaled_matrix.sum(dim=1, keepdim=True)
+        scaled_threshold = torch.full_like(row_abs_max, clamp_min) / scale
+        use_scaled_l1 = finite_nonzero_rows.unsqueeze(1) & (row_l1_scaled >= scaled_threshold)
+
+        row_denominator = torch.where(
+            use_scaled_l1,
+            row_l1_scaled,
+            torch.where(finite_nonzero_rows.unsqueeze(1), scaled_threshold, row_l1_scaled),
+        )
+        row_denominator = row_denominator.clamp(min=clamp_min)
+        normalized = scaled_matrix / row_denominator
+        return torch.where(nan_rows, torch.full_like(normalized, float("nan")), normalized)
+
+    if bool(finite_nonzero_rows.any()):
+        scale = torch.where(
+            finite_nonzero_rows.unsqueeze(1), row_abs_max, torch.ones_like(row_abs_max)
+        )
+        abs_matrix.div_(scale)
+
+        row_l1_scaled = abs_matrix.sum(dim=1, keepdim=True)
+        scaled_threshold = torch.full_like(row_abs_max, clamp_min) / scale
+
+        row_denominator = torch.ones_like(row_abs_max)
+        use_scaled_l1 = finite_nonzero_rows & (row_l1_scaled >= scaled_threshold).squeeze(1)
+        use_clamp = finite_nonzero_rows & ~use_scaled_l1
+
+        if bool(use_scaled_l1.any()):
+            row_denominator[use_scaled_l1] = row_l1_scaled[use_scaled_l1]
+
+        if bool(use_clamp.any()):
+            row_denominator[use_clamp] = scaled_threshold[use_clamp]
+
+        abs_matrix.div_(row_denominator)
+
+    nonfinite_denominator_rows = (~torch.isfinite(row_abs_max)).squeeze(1)
+    if bool(nonfinite_denominator_rows.any()):
+        row_l1 = abs_matrix[nonfinite_denominator_rows].sum(dim=1, keepdim=True)
+        abs_matrix[nonfinite_denominator_rows] /= row_l1
+
+    if bool(nan_rows.any()):
+        abs_matrix[nan_rows.squeeze(1)] = torch.full_like(
+            abs_matrix[nan_rows.squeeze(1)], float("nan")
+        )
+
+    return abs_matrix
 
 
 def compute_influence(A: torch.Tensor, logit_weights: torch.Tensor, max_iter: int = 1000):
@@ -390,7 +465,7 @@ def compute_partial_influences(
 
     normalized_matrix = torch.empty_like(edge_matrix, device=device).copy_(edge_matrix)
     normalized_matrix = normalized_matrix.abs_()
-    normalized_matrix /= normalized_matrix.sum(dim=1, keepdim=True).clamp(min=1e-8)
+    normalized_matrix = _normalize_abs_rows(normalized_matrix, clamp_min=1e-8, in_place=True)
 
     influences = torch.zeros(edge_matrix.shape[1], device=normalized_matrix.device)
     prod = torch.zeros(edge_matrix.shape[1], device=normalized_matrix.device)
