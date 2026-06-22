@@ -96,6 +96,12 @@ def main():
         default="transformerlens",
         help="Backend to use for the replacement model (default: transformerlens).",
     )
+    attr_parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Device to run on (e.g. cuda, mps, cpu). Defaults to cuda if available, then mps, then cpu.",
+    )
 
     # Arguments for graph creation
     attr_parser.add_argument(
@@ -211,9 +217,21 @@ def run_attribution(args, parser):
         dtype = dtype_mapping[dtype]
     dtype = getattr(torch, dtype)
 
+    # Resolve device
+    from circuit_tracer.utils import get_default_device
+
+    if args.device is not None:
+        try:
+            device = torch.device(args.device)
+        except RuntimeError as e:
+            parser.error(f"Invalid --device value {args.device!r}: {e}")
+    else:
+        device = get_default_device()
+
     # Run attribution
     logging.info(f"Generating attribution graph for model: {args.model}")
     logging.info(f"Loading model with dtype: {dtype}")
+    logging.info(f"Using device: {device}")
     logging.info(f'Input prompt: "{args.prompt}"')
     if args.graph_output_path:
         logging.info(f"Output will be saved to: {args.graph_output_path}")
@@ -230,6 +248,7 @@ def run_attribution(args, parser):
     transcoder, config = load_transcoder_from_hub(
         args.transcoder_set,
         dtype=dtype,
+        device=device,
         lazy_encoder=args.lazy_encoder,
         lazy_decoder=args.lazy_decoder,
     )
@@ -238,7 +257,7 @@ def run_attribution(args, parser):
         parser.error("--model must be specified when not provided in transcoder config")
 
     model_instance = ReplacementModel.from_pretrained_and_transcoders(
-        args.model, transcoder, dtype=dtype, backend=args.backend
+        args.model, transcoder, dtype=dtype, device=device, backend=args.backend
     )
 
     logging.info("Running attribution...")
