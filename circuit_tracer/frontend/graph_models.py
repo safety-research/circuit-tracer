@@ -63,7 +63,7 @@ class Node(BaseModel):
         """Create an error node."""
         reverse_ctx_idx = 0
         return cls(
-            node_id=f"0_{layer}_{pos}",
+            node_id=f"{layer}_-1_{pos}",
             feature=-1,
             layer=str(layer),
             ctx_idx=pos,
