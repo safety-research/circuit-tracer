@@ -1,6 +1,6 @@
 [project]
 name = "circuit-tracer"
-version = "0.4.1"
+dynamic = ["version"]
 description = "Library for circuit tracing in language models"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,8 +28,11 @@ dev = ["pytest>=8.0.0", "ruff>=0.12.7", "pyright>=1.1.403", "ipython>=8.37.0"]
 circuit-tracer = "circuit_tracer.__main__:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
 
 [tool.ruff]
 line-length = 100
