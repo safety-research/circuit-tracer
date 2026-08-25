@@ -410,7 +410,17 @@ def load_large_gpt_oss_model_with_dummy_clt():
     model.tokenizer.pad_token = model.tokenizer.eos_token  # type:ignore
 
     s = torch.tensor([0, 102, 20, 57, 21])
-    _, activations = model.get_activations(s)
+    # This fixture pairs a dummy vocab_size=128 config with the real tokenizer, so the
+    # tokenizer's own BOS id is out of range for this model's embedding. get_activations
+    # now canonicalizes its input and prepends a special token unless one is already
+    # leading, so treat id 0 as special here, exactly as the tests using this fixture do.
+    tokenizer_class = type(model.tokenizer)
+    original_all_special_ids = tokenizer_class.all_special_ids  # type:ignore
+    try:
+        tokenizer_class.all_special_ids = property(lambda self: [0])  # type:ignore
+        _, activations = model.get_activations(s)
+    finally:
+        tokenizer_class.all_special_ids = original_all_special_ids  # type:ignore
     assert isinstance(clt.activation_function, JumpReLU)
     set_l0_via_thresholds(activations, clt.activation_function.threshold, target_l0=16)
 
