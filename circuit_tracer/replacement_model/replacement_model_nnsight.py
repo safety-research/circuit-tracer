@@ -136,6 +136,31 @@ class NNSightReplacementModel(LanguageModel):
         if hasattr(config, "quantization_config"):
             config.quantization_config["dequantize"] = True
 
+        # nnsight >= 0.7 refuses multimodal-registered repos (e.g. gemma-3-4b-it is
+        # AutoModelForImageTextToText) under the default automodel and directs callers to
+        # VisionLanguageModel, which is unusable here (this class subclasses LanguageModel).
+        # Resolving the concrete class AutoModelForCausalLM would pick keeps the exact module
+        # tree the transcoder mappings were validated against, on both nnsight 0.6 and 0.7.
+        automodel_kwargs = {}
+        try:
+            from transformers.models.auto.modeling_auto import (
+                MODEL_FOR_CAUSAL_LM_MAPPING_NAMES,
+                MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES,
+            )
+
+            model_type = getattr(config, "model_type", None)
+            if (
+                model_type in MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES
+                and model_type in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
+            ):
+                import transformers
+
+                automodel_kwargs["automodel"] = getattr(
+                    transformers, MODEL_FOR_CAUSAL_LM_MAPPING_NAMES[model_type]
+                )
+        except ImportError:
+            pass
+
         super(cls, model).__init__(
             model_name,
             config=config,
@@ -143,6 +168,7 @@ class NNSightReplacementModel(LanguageModel):
             dispatch=True,
             dtype=dtype,
             attn_implementation="eager",
+            **automodel_kwargs,
         )
 
         model._configure_replacement_model(transcoders)
@@ -377,7 +403,8 @@ class NNSightReplacementModel(LanguageModel):
         _, fetch_activations = self.get_activation_fn(
             sparse=sparse, apply_activation_function=apply_activation_function
         )
-        with torch.inference_mode(), self.trace(inputs):
+        trace_inputs = self._trace_input_tokens(inputs)
+        with torch.inference_mode(), self.trace(trace_inputs):
             logits, activation_cache = fetch_activations()  # type:ignore
             logits = save(logits)  # type: ignore
             activation_cache = save(activation_cache)  # type: ignore
@@ -477,6 +504,11 @@ class NNSightReplacementModel(LanguageModel):
 
         return tokens.to(self.device)
 
+    def _trace_input_tokens(self, inputs: str | torch.Tensor | list[int]) -> torch.Tensor:
+        """Canonicalize inputs to the exact token tensor used for tracing/invocation."""
+
+        return self.ensure_tokenized(inputs)
+
     @torch.no_grad()
     def setup_attribution(self, inputs: str | torch.Tensor):
         """Precomputes the transcoder activations and error vectors, saving them and the
@@ -575,10 +607,11 @@ class NNSightReplacementModel(LanguageModel):
         # This gets around it.
         transcoders = self.transcoders
         skip_transcoder = self.skip_transcoder
+        trace_inputs = self._trace_input_tokens(inputs)
 
         # get transcoder activations and values to freeze to
         with self.trace() as tracer:
-            with tracer.invoke(inputs):
+            with tracer.invoke(trace_inputs):
                 activation_fn()  # type:ignore
             dict_to_freeze = save(get_locs_to_freeze())  # type: ignore
             for freeze_loc_name, loc_type_to_freeze in get_locs_to_freeze().items():
@@ -671,7 +704,7 @@ class NNSightReplacementModel(LanguageModel):
         elif original_activations is not None:
             n_pos = original_activations.size(1)
         else:
-            n_pos = len(self.tokenizer(inputs).input_ids)
+            n_pos = int(self._trace_input_tokens(inputs).shape[0])
 
         layer_deltas = torch.zeros(
             [self.cfg.n_layers, n_pos, self.cfg.d_model],
@@ -781,6 +814,7 @@ class NNSightReplacementModel(LanguageModel):
             )
         else:
             original_activations, freeze_fns = None, []
+        trace_inputs = self._trace_input_tokens(inputs)
 
         intervention_layers = set()
         for layer, _, _, _ in interventions:
@@ -794,7 +828,7 @@ class NNSightReplacementModel(LanguageModel):
             activation_barrier = None if constrained_layers else tracer.barrier(2)
             direct_effects_barrier = tracer.barrier(2) if constrained_layers else None
 
-            with tracer.invoke(inputs):
+            with tracer.invoke(trace_inputs):
                 _, activation_cache = activation_fn(
                     barrier=activation_barrier,  # type:ignore
                     barrier_layers=intervention_layers,
@@ -808,7 +842,7 @@ class NNSightReplacementModel(LanguageModel):
 
             with tracer.invoke():
                 cached_logits = self._perform_feature_intervention(
-                    inputs,
+                    trace_inputs,
                     interventions,
                     activation_matrix,  # type: ignore
                     original_activations,
@@ -909,6 +943,7 @@ class NNSightReplacementModel(LanguageModel):
             )
         else:
             original_activations, freeze_fns = None, []
+        trace_inputs = self._trace_input_tokens(inputs)
 
         intervention_layers = set()
         for layer, _, _, _ in interventions:
@@ -928,7 +963,7 @@ class NNSightReplacementModel(LanguageModel):
             activation_barrier = tracer.barrier(2)
             direct_effects_barrier = tracer.barrier(2) if constrained_layers else None
 
-            with tracer.invoke(inputs):
+            with tracer.invoke(trace_inputs):
                 with tracer.iter[:] as act_idx:
                     current_intervention_layers = (
                         intervention_layers if act_idx == 0 else converted_intervention_layers
@@ -958,7 +993,7 @@ class NNSightReplacementModel(LanguageModel):
             with tracer.invoke():
                 with tracer.iter[:] as idx:
                     logits = self._perform_feature_intervention(
-                        inputs=inputs,
+                        inputs=trace_inputs,
                         interventions=(interventions if idx == 0 else converted_interventions),
                         activation_matrix=activation_matrix,  # type: ignore
                         original_activations=original_activations,
@@ -973,7 +1008,7 @@ class NNSightReplacementModel(LanguageModel):
             with tracer.invoke():
                 out = save(self.generator.output)
         return (
-            tokenizer.decode(out.squeeze(0)),
+            str(tokenizer.decode(out.squeeze(0))),
             torch.cat(all_logits, dim=0),
             (activation_cache[0] if return_activations else None),
         )
