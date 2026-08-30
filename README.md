@@ -68,7 +68,7 @@ In order to use the `lazy_decoder` and `lazy_encoder` options on transcoders, th
 from circuit_tracer.utils.caching import save_transcoders_to_cache
 
 hf_ref = "mwhanna/gemma-scope-2-27b-pt/transcoder_all/width_262k_l0_small"
-cache_dir = '~/.cache/'
+cache_dir = "~/.cache/"
 save_transcoders_to_cache(hf_ref, cache_dir=cache_dir)
 ```
 

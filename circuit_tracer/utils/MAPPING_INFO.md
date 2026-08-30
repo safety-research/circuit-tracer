@@ -12,7 +12,9 @@ class TransformerLens_NNSight_Mapping:
     embed_location: str  # Location of the embedding Module (the location to which we will attribute for embeddings)
     embed_weight: str  # Location of the embedding weight matrix
     unembed_weight: str  # Location of the unembedding weight matrix
-    feature_hook_mapping: dict[str, tuple[str, Literal['input', 'output']]]  # Mapping from (TransformerLens Hook) to a tuple representing an NNSight Envoy location, and whether we want its input or output
+    feature_hook_mapping: dict[
+        str, tuple[str, Literal["input", "output"]]
+    ]  # Mapping from (TransformerLens Hook) to a tuple representing an NNSight Envoy location, and whether we want its input or output
 ```
 
 The values of the location / pattern fields are the NNSight locations whose outputs we need to access or freeze. For example, if `embed_location="model.embed_tokens"`, this means that `model.model.embed_tokens` is the location of the embeddings, and `model.model.embed_tokens.output` will fetch its output.
